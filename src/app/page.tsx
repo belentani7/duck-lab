@@ -68,15 +68,15 @@ const MuteIcon = ({ muted }: { muted: boolean }) => (
 )
 
 const SoloIcon = ({ solo }: { solo: boolean }) => (
-  <button className={`px-2 py-0.5 text-xs font-bold rounded ${solo ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-400 hover:text-white'}`}>
+  <span className={`px-2 py-0.5 text-xs font-bold rounded ${solo ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-400 hover:text-white'}`}>
     S
-  </button>
+  </span>
 )
 
 const ArmIcon = ({ armed }: { armed: boolean }) => (
-  <button className={`px-2 py-0.5 text-xs font-bold rounded ${armed ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 text-gray-700 hover:bg-red-400 hover:text-white'}`}>
+  <span className={`px-2 py-0.5 text-xs font-bold rounded ${armed ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 text-gray-700 hover:bg-red-400 hover:text-white'}`}>
     R
-  </button>
+  </span>
 )
 
 const SearchIcon = () => (
@@ -143,20 +143,20 @@ export default function DuckLabDAW() {
   const [selectedCategory, setSelectedCategory] = useState<AssetCategory | ''>('')
   const [selectedGenre, setSelectedGenre] = useState<Genre | ''>('')
 
-  // Initialize on mount
+  // Initialize UI state and the catalogue. The audio context is created only
+  // from a playback or recording gesture, as required by modern browsers.
   useEffect(() => {
-    if (!isInitialized) {
-      initialize()
-      // Add a default track
-      addTrack({ name: 'Faixa 1', color: '#10B981' })
-      
-      // Initialize audio engine
-      getAudioEngine().initialize().catch(console.error)
-      
-      // Initialize assets library
-      getAssetsLibrary().initialize().catch(console.error)
-    }
-  }, [isInitialized, initialize, addTrack])
+    if (isInitialized) return
+
+    initialize()
+    void getAssetsLibrary().initialize().catch(() => {
+      useDuckLabStore.getState().addNotification({
+        type: 'error',
+        title: 'Biblioteca indisponível',
+        message: 'Não foi possível carregar os ativos de áudio.',
+      })
+    })
+  }, [isInitialized, initialize])
 
   // Handle search
   const handleSearch = useCallback(() => {
@@ -201,6 +201,7 @@ export default function DuckLabDAW() {
           {/* Project Name */}
           <input
             type="text"
+            aria-label="Nome do projeto"
             value={project.name}
             onChange={(e) => useDuckLabStore.getState().updateProject({ name: e.target.value })}
             className="px-3 py-1 border rounded-md bg-transparent focus:outline-none focus:ring-2"
@@ -221,6 +222,7 @@ export default function DuckLabDAW() {
             </label>
             <input
               type="number"
+              aria-label="BPM do projeto"
               value={project.bpm}
               onChange={(e) => setBPM(Number(e.target.value))}
               className="w-16 px-2 py-1 text-center border rounded-md bg-transparent focus:outline-none focus:ring-2"
@@ -252,14 +254,23 @@ export default function DuckLabDAW() {
 
         {/* Export Button */}
         <button
+          type="button"
           onClick={() => {
-            getAudioEngine().downloadAsWAV(`${project.name}.wav`).then(() => {
-              useDuckLabStore.getState().addNotification({
-                type: 'success',
-                title: 'Exportação Concluída',
-                message: 'Arquivo WAV exportado com sucesso!',
+            void getAudioEngine().downloadAsWAV(`${project.name}.wav`)
+              .then(() => {
+                useDuckLabStore.getState().addNotification({
+                  type: 'success',
+                  title: 'Exportação concluída',
+                  message: 'Arquivo WAV exportado com sucesso!',
+                })
               })
-            }).catch(console.error)
+              .catch(() => {
+                useDuckLabStore.getState().addNotification({
+                  type: 'error',
+                  title: 'Exportação indisponível',
+                  message: 'Inicie o áudio antes de exportar o projeto.',
+                })
+              })
           }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-white transition-colors hover:opacity-90"
           style={{ backgroundColor: theme.primaryColor }}
@@ -279,10 +290,12 @@ export default function DuckLabDAW() {
           <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: theme.gridColor }}>
             <h2 className="font-semibold" style={{ color: theme.textColor }}>Faixas</h2>
             <button
+              type="button"
               onClick={() => addTrack()}
               className="p-1 rounded-md hover:bg-opacity-80 transition-colors"
               style={{ color: theme.primaryColor }}
               title="Adicionar Faixa"
+              aria-label="Adicionar faixa"
             >
               <PlusIcon />
             </button>
@@ -410,9 +423,12 @@ export default function DuckLabDAW() {
       )}
 
       {/* Toggle Asset Browser Button */}
-      <button
-        onClick={() => togglePanel('assetBrowser')}
-        className="fixed bottom-4 right-4 px-4 py-2 rounded-full shadow-lg text-white flex items-center gap-2 z-50"
+        <button
+          type="button"
+          onClick={() => togglePanel('assetBrowser')}
+          aria-expanded={panels.assetBrowser}
+          aria-controls="biblioteca-de-ativos"
+          className="fixed bottom-4 right-4 px-4 py-2 rounded-full shadow-lg text-white flex items-center gap-2 z-50"
         style={{ backgroundColor: theme.primaryColor }}
       >
         <SearchIcon />
@@ -459,8 +475,7 @@ function TrackCard({
 }) {
   return (
     <div
-      onClick={onSelect}
-      className={`p-3 rounded-lg cursor-pointer transition-all ${
+      className={`p-3 rounded-lg transition-all ${
         isSelected ? 'ring-2 ring-offset-1' : ''
       }`}
       style={{
@@ -470,17 +485,24 @@ function TrackCard({
       } as React.CSSProperties}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={isSelected}
+          className="flex items-center gap-2 rounded text-left focus:outline-none focus:ring-2"
+          style={{ color: theme.textColor, '--tw-ring-color': track.color } as React.CSSProperties}
+        >
+          <span
+            aria-hidden="true"
             className="w-3 h-3 rounded-full"
             style={{ backgroundColor: track.color }}
           />
-          <span className="font-medium text-sm truncate" style={{ color: theme.textColor }}>
-            {track.name}
-          </span>
-        </div>
+          <span className="font-medium text-sm truncate">{track.name}</span>
+        </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onRemove() }}
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remover ${track.name}`}
           className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-500"
         >
           <TrashIcon />
@@ -493,6 +515,7 @@ function TrackCard({
           <VolumeIcon />
           <input
             type="range"
+            aria-label={`Volume de ${track.name}`}
             min="0"
             max="1"
             step="0.01"
@@ -511,6 +534,7 @@ function TrackCard({
           <span className="text-xs w-4 text-center" style={{ color: theme.textColor }}>L</span>
           <input
             type="range"
+            aria-label={`Panorama de ${track.name}`}
             min="-1"
             max="1"
             step="0.01"
@@ -526,20 +550,29 @@ function TrackCard({
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-1">
             <button
-              onClick={(e) => { e.stopPropagation(); onToggleMute() }}
+              type="button"
+              onClick={onToggleMute}
               title={track.muted ? 'Ativar som' : 'Silenciar'}
+              aria-label={track.muted ? `Ativar som de ${track.name}` : `Silenciar ${track.name}`}
+              aria-pressed={track.muted}
             >
               <MuteIcon muted={track.muted} />
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onToggleSolo() }}
+              type="button"
+              onClick={onToggleSolo}
               title={track.solo ? 'Desativar solo' : 'Ativar solo'}
+              aria-label={track.solo ? `Desativar solo de ${track.name}` : `Ativar solo de ${track.name}`}
+              aria-pressed={track.solo}
             >
               <SoloIcon solo={track.solo} />
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onToggleArm() }}
+              type="button"
+              onClick={onToggleArm}
               title={track.armed ? 'Desarmar gravação' : 'Armar para gravação'}
+              aria-label={track.armed ? `Desarmar gravação de ${track.name}` : `Armar ${track.name} para gravação`}
+              aria-pressed={track.armed}
             >
               <ArmIcon armed={track.armed} />
             </button>
@@ -580,7 +613,7 @@ function TransportBar({
   onToggleLoop: () => void
   onToggleMetronome: () => void
   onTimeChange: (time: number) => void
-  theme: { primaryColor: string; textColor: string; surfaceColor: string }
+  theme: { primaryColor: string; textColor: string; surfaceColor: string; gridColor: string }
 }) {
   const isPlaying = transportState === 'playing'
   const isRecording = transportState === 'recording'
@@ -594,7 +627,10 @@ function TransportBar({
       <div className="flex items-center gap-2">
         {/* Record Button */}
         <button
+          type="button"
           onClick={isRecording ? onStopRecord : onStartRecord}
+          aria-label={isRecording ? 'Parar gravação' : 'Iniciar gravação'}
+          aria-pressed={isRecording}
           className={`p-3 rounded-full transition-all ${
             isRecording ? 'bg-red-500 animate-pulse' : 'hover:bg-red-100'
           }`}
@@ -605,7 +641,9 @@ function TransportBar({
 
         {/* Stop Button */}
         <button
+          type="button"
           onClick={onStop}
+          aria-label="Parar reprodução"
           className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
           style={{ color: theme.textColor }}
           title="Parar"
@@ -615,7 +653,10 @@ function TransportBar({
 
         {/* Play/Pause Button */}
         <button
+          type="button"
           onClick={onTogglePlayPause}
+          aria-label={isPlaying ? 'Pausar reprodução' : 'Reproduzir projeto'}
+          aria-pressed={isPlaying}
           className="p-3 rounded-full text-white transition-all"
           style={{ backgroundColor: isPlaying ? theme.primaryColor : theme.primaryColor }}
           title={isPlaying ? 'Pausar' : 'Reproduzir'}
@@ -626,7 +667,10 @@ function TransportBar({
 
       {/* Loop Toggle */}
       <button
+        type="button"
         onClick={onToggleLoop}
+        aria-label={loopEnabled ? 'Desativar loop' : 'Ativar loop'}
+        aria-pressed={loopEnabled}
         className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
         style={{ color: theme.textColor }}
         title={loopEnabled ? 'Desativar Loop' : 'Ativar Loop'}
@@ -636,7 +680,10 @@ function TransportBar({
 
       {/* Metronome Toggle */}
       <button
+        type="button"
         onClick={onToggleMetronome}
+        aria-label={metronomeEnabled ? 'Desativar metrônomo' : 'Ativar metrônomo'}
+        aria-pressed={metronomeEnabled}
         className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
         style={{ color: theme.textColor }}
         title={metronomeEnabled ? 'Desativar Metrônomo' : 'Ativar Metrônomo'}
@@ -648,6 +695,7 @@ function TransportBar({
       <div className="ml-4">
         <input
           type="range"
+          aria-label="Posição de reprodução"
           min="0"
           max="300"
           step="0.01"
@@ -681,7 +729,7 @@ function TimelineGrid({
   loopStart: number
   loopEnd: number
   loopEnabled: boolean
-  tracks: Array<{ id: string; name: string; color: string; clips: Array<{ id: string; startTime: number; duration: number }> }>
+  tracks: Array<{ id: string; name: string; color: string; clips: Array<{ id: string; name: string; startTime: number; duration: number }> }>
   onTimeClick: (time: number) => void
   theme: { gridColor: string; surfaceColor: string; primaryColor: string }
 }) {
@@ -690,7 +738,7 @@ function TimelineGrid({
   const totalWidth = duration * pixelsPerSecond
 
   // Generate time markers
-  const markers = []
+  const markers: number[] = []
   const secondsPerBeat = 60 / bpm
   for (let t = 0; t <= duration; t += secondsPerBeat) {
     markers.push(t)
@@ -812,7 +860,7 @@ function Playhead({
 function MasterChannel({
   theme,
 }: {
-  theme: { primaryColor: string; textColor: string; surfaceColor: string }
+  theme: { primaryColor: string; textColor: string; surfaceColor: string; gridColor: string }
 }) {
   const [masterVolume, setMasterVolume] = useState(1)
   
@@ -834,6 +882,7 @@ function MasterChannel({
         <div className="h-32 w-6 relative">
           <input
             type="range"
+            aria-label="Volume mestre"
             min="0"
             max="1"
             step="0.01"
@@ -844,7 +893,7 @@ function MasterChannel({
             }}
             className="absolute inset-y-0 w-full appearance-none bg-transparent orient-vertical"
             style={{
-              writingMode: 'bt-lr',
+              writingMode: 'vertical-lr',
               WebkitAppearance: 'slider-vertical',
             }}
           />
@@ -913,7 +962,10 @@ function ChannelStrip({
           </span>
         </div>
         <button
+          type="button"
           onClick={() => setShowEffects(!showEffects)}
+          aria-label={showEffects ? `Ocultar efeitos de ${track.name}` : `Mostrar efeitos de ${track.name}`}
+          aria-expanded={showEffects}
           className="p-1 rounded hover:bg-gray-200"
         >
           <SettingsIcon />
@@ -925,6 +977,7 @@ function ChannelStrip({
         <div className="h-24 w-4 relative">
           <input
             type="range"
+            aria-label={`Volume do canal ${track.name}`}
             min="0"
             max="1"
             step="0.01"
@@ -932,7 +985,7 @@ function ChannelStrip({
             onChange={(e) => onVolumeChange(Number(e.target.value))}
             className="absolute inset-y-0 w-full appearance-none bg-transparent"
             style={{
-              writingMode: 'bt-lr',
+              writingMode: 'vertical-lr',
               WebkitAppearance: 'slider-vertical',
             }}
           />
@@ -1058,10 +1111,6 @@ function LevelMeter({
           setLevel(levels.rms)
           setPeak(levels.peak)
         }
-      } else {
-        // Simulated random levels for demo
-        setLevel(Math.random() * 0.3)
-        setPeak(Math.random() * 0.5)
       }
     }, 50)
 
@@ -1132,15 +1181,17 @@ function AssetBrowserPanel({
 
   return (
     <div
+      id="biblioteca-de-ativos"
+      aria-label="Biblioteca de ativos"
       className="border-t max-h-80 flex flex-col"
       style={{ backgroundColor: theme.backgroundColor, borderColor: theme.gridColor }}
     >
       {/* Search Bar */}
       <div className="p-4 border-b flex gap-4" style={{ borderColor: theme.gridColor }}>
         <div className="flex-1 relative">
-          <SearchIcon />
           <input
             type="text"
+            aria-label="Buscar ativos"
             placeholder="Buscar ativos..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
@@ -1159,6 +1210,7 @@ function AssetBrowserPanel({
 
         {/* Category Filter */}
         <select
+          aria-label="Filtrar por categoria"
           value={selectedCategory}
           onChange={(e) => onCategoryChange(e.target.value as AssetCategory | '')}
           className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2"
@@ -1177,6 +1229,7 @@ function AssetBrowserPanel({
 
         {/* Genre Filter */}
         <select
+          aria-label="Filtrar por gênero"
           value={selectedGenre}
           onChange={(e) => onGenreChange(e.target.value as Genre | '')}
           className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2"
@@ -1244,11 +1297,17 @@ function AssetCard({
     vocals: '#EC4899',
     fx: '#8B5CF6',
   }
+  const waveformBars = Array.from({ length: 12 }, (_, index) => {
+    const charCode = asset.id.charCodeAt(index % asset.id.length)
+    return 30 + ((charCode * (index + 11)) % 70)
+  })
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all hover:-translate-y-0.5"
+      aria-label={`Selecionar ativo ${asset.name}`}
+      className="p-3 rounded-lg border cursor-pointer text-left hover:shadow-md transition-all hover:-translate-y-0.5 focus:outline-none focus:ring-2"
       style={{
         backgroundColor: theme.surfaceColor,
         borderColor: theme.gridColor,
@@ -1260,12 +1319,12 @@ function AssetCard({
         style={{ backgroundColor: `${categoryColors[asset.category]}20` }}
       >
         <div className="flex items-end gap-0.5 h-8">
-          {Array.from({ length: 12 }).map((_, i) => (
+          {waveformBars.map((height, i) => (
             <div
               key={i}
               className="w-1 rounded-full"
               style={{
-                height: `${30 + Math.random() * 70}%`,
+                height: `${height}%`,
                 backgroundColor: categoryColors[asset.category],
                 opacity: 0.7,
               }}
@@ -1299,6 +1358,6 @@ function AssetCard({
           Tom: {asset.key.toUpperCase()}
         </span>
       )}
-    </div>
+    </button>
   )
 }

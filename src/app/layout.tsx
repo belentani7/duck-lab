@@ -14,24 +14,39 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+  title: {
+    default: "Duck Lab — Estúdio de Áudio Digital",
+    template: "%s | Duck Lab",
+  },
+  description:
+    "Duck Lab é uma estação de trabalho de áudio digital para gravar, organizar, mixar e exportar projetos musicais no navegador.",
+  applicationName: "Duck Lab",
+  keywords: [
+    "DAW",
+    "estúdio de áudio",
+    "gravação",
+    "mixagem",
+    "Web Audio API",
+    "Duck Lab",
+  ],
+  authors: [{ name: "Duck Lab" }],
+  robots: {
+    index: false,
+    follow: false,
   },
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "Duck Lab — Estúdio de Áudio Digital",
+    description:
+      "Crie, grave e mixe projetos musicais diretamente no navegador.",
+    siteName: "Duck Lab",
     type: "website",
+    locale: "pt_BR",
   },
   twitter: {
-    card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    card: "summary",
+    title: "Duck Lab — Estúdio de Áudio Digital",
+    description:
+      "Crie, grave e mixe projetos musicais diretamente no navegador.",
   },
 };
 
@@ -41,7 +56,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="pt-BR">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >

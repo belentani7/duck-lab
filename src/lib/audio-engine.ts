@@ -92,6 +92,7 @@ export interface RecordingData {
 
 /** Engine event types */
 export type EngineEventType = 
+  | 'ready'
   | 'play'
   | 'pause'
   | 'stop'
@@ -142,22 +143,22 @@ export class AudioTrack {
   public color: string;
   
   // Gain nodes for volume control
-  private _volumeGainNode: GainNode;
-  private _panNode: StereoPannerNode;
+  private _volumeGainNode!: GainNode;
+  private _panNode!: StereoPannerNode;
   
   // Effects chain nodes
-  private _eqLowNode: BiquadFilterNode;
-  private _eqMidNode: BiquadFilterNode;
-  private _eqHighNode: BiquadFilterNode;
-  private _compressorNode: DynamicsCompressorNode;
-  private _distortionNode: WaveShaperNode;
-  private _delayNode: DelayNode;
-  private _delayFeedbackGain: GainNode;
-  private _delayWetGain: GainNode;
-  private _delayDryGain: GainNode;
-  private _convolverNode: ConvolverNode;
-  private _reverbWetGain: GainNode;
-  private _reverbDryGain: GainNode;
+  private _eqLowNode!: BiquadFilterNode;
+  private _eqMidNode!: BiquadFilterNode;
+  private _eqHighNode!: BiquadFilterNode;
+  private _compressorNode!: DynamicsCompressorNode;
+  private _distortionNode!: WaveShaperNode;
+  private _delayNode!: DelayNode;
+  private _delayFeedbackGain!: GainNode;
+  private _delayWetGain!: GainNode;
+  private _delayDryGain!: GainNode;
+  private _convolverNode!: ConvolverNode;
+  private _reverbWetGain!: GainNode;
+  private _reverbDryGain!: GainNode;
   
   // Input and output nodes
   public inputNode: GainNode;
@@ -179,7 +180,7 @@ export class AudioTrack {
   private _mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private _recordingBuffer: Float32Array[] = [];
   private _isRecording: boolean = false;
-  private _recordingProcessor: ScriptProcessorNode | WorkletNode | null = null;
+  private _recordingProcessor: ScriptProcessorNode | AudioWorkletNode | null = null;
 
   constructor(
     private context: AudioContext,
@@ -314,7 +315,7 @@ export class AudioTrack {
   /**
    * Generate distortion curve for waveshaper
    */
-  private _makeDistortionCurve(amount: number): Float32Array {
+  private _makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
     const samples = 44100;
     const curve = new Float32Array(samples);
     const deg = Math.PI / 180;

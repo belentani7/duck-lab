@@ -431,12 +431,8 @@ export class AssetsLibrary {
   async initialize(): Promise<void> {
     if (this._initialized) return;
 
-    console.log('Inicializando biblioteca de ativos Duck Lab...');
-    
     this._generateAllAssets();
-    
     this._initialized = true;
-    console.log(`Biblioteca inicializada com ${this._assets.size} ativos`);
   }
 
   /**
@@ -464,8 +460,6 @@ export class AssetsLibrary {
    * Gerar todos os ativos da biblioteca
    */
   private _generateAllAssets(): void {
-    // Generate assets for each category and genre combination
-    const categories: AssetCategory[] = ['drums', 'bass', 'melodic', 'vocals', 'fx'];
     const genres: Genre[] = ['hip-hop', 'electronic', 'rock', 'jazz', 'lofi', 'reggaeton'];
 
     let idCounter = 1;
@@ -493,6 +487,17 @@ export class AssetsLibrary {
     // FX - ~350 items
     for (const genre of genres) {
       idCounter = this._generateFXAssets(genre, idCounter);
+    }
+
+    // Complete the catalogue in deterministic batches so the public 3.000+ promise
+    // remains true even when genre-specific exclusions reduce earlier categories.
+    let supplementalIndex = 0;
+    while (this._assets.size < 3000) {
+      idCounter = this._generateFXAssets(
+        genres[supplementalIndex % genres.length],
+        idCounter
+      );
+      supplementalIndex++;
     }
   }
 

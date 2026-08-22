@@ -8,18 +8,21 @@
 
 import { create } from 'zustand';
 import { persist, devtools } from 'zustand/middleware';
+import { getAudioEngine } from './audio-engine';
 import type {
   TrackOptions,
   TransportState,
   TimeSignature,
   EffectParams,
+} from './audio-engine';
+import type {
+  AssetCategory,
   AssetMetadata,
+  AssetsLibrary,
+  Genre,
   SearchOptions,
   SearchResult,
-  Genre,
-  AssetCategory,
-} from './audio-engine';
-import type { AssetsLibrary } from './assets-library';
+} from './assets-library';
 
 // ============================================================================
 // TYPE DEFINITIONS / DEFINIÇÕES DE TIPO
@@ -468,13 +471,13 @@ const DEFAULT_PANELS: PanelsVisibility = {
 
 const DEFAULT_THEME: ThemeConfig = {
   primaryColor: '#10B981', // Emerald Green
-  accentColor: '#059669',
-  backgroundColor: '#FFFFFF',
-  surfaceColor: '#F9FAFB',
-  textColor: '#111827',
-  waveformColor: '#10B981',
-  gridColor: '#E5E7EB',
-  darkMode: false,
+  accentColor: '#34D399',
+  backgroundColor: '#061A16',
+  surfaceColor: '#0B2720',
+  textColor: '#ECFDF5',
+  waveformColor: '#34D399',
+  gridColor: '#1F4D3D',
+  darkMode: true,
 };
 
 const DEFAULT_SELECTION: SelectionState = {
@@ -535,6 +538,44 @@ function createDefaultTrack(index: number, options?: Partial<TrackOptions>): Tra
     effects: {},
     clips: [],
   };
+}
+
+function applyTrackStateToEngine(track: TrackState): void {
+  const engineTrack = getAudioEngine().getTrack(track.id);
+  if (!engineTrack) return;
+
+  engineTrack.setVolume(track.volume);
+  engineTrack.setPan(track.pan);
+  engineTrack.setMuted(track.muted);
+  engineTrack.setSolo(track.solo);
+  engineTrack.setArmed(track.armed);
+  engineTrack.setEffects(track.effects);
+}
+
+async function prepareAudioEngine(tracks: TrackState[]) {
+  const engine = getAudioEngine();
+
+  if (!engine.getContext()) {
+    await engine.initialize();
+  }
+
+  for (const track of tracks) {
+    if (!engine.getTrack(track.id)) {
+      engine.createTrack({
+        id: track.id,
+        name: track.name,
+        color: track.color,
+        volume: track.volume,
+        pan: track.pan,
+        muted: track.muted,
+        solo: track.solo,
+        armed: track.armed,
+      });
+    }
+    applyTrackStateToEngine(track);
+  }
+
+  return engine;
 }
 
 // ============================================================================
@@ -628,6 +669,7 @@ export const useDuckLabStore = create<DuckLabStore>()(
 
         setBPM: (bpm) => {
           const clampedBpm = Math.max(20, Math.min(300, bpm));
+          getAudioEngine().setBPM(clampedBpm);
           set((state) => ({
             project: { ...state.project, bpm: clampedBpm },
           }));
@@ -635,12 +677,15 @@ export const useDuckLabStore = create<DuckLabStore>()(
         },
 
         setTimeSignature: (beatsPerMeasure, beatUnit) => {
+          const normalizedBeats = Math.max(1, Math.min(32, beatsPerMeasure));
+          const normalizedUnit = Math.max(1, Math.min(32, beatUnit));
+          getAudioEngine().setTimeSignature(normalizedBeats, normalizedUnit);
           set((state) => ({
             project: {
               ...state.project,
               timeSignature: {
-                beatsPerMeasure: Math.max(1, Math.min(32, beatsPerMeasure)),
-                beatUnit: Math.max(1, Math.min(32, beatUnit)),
+                beatsPerMeasure: normalizedBeats,
+                beatUnit: normalizedUnit,
               },
             },
           }));
@@ -658,6 +703,21 @@ export const useDuckLabStore = create<DuckLabStore>()(
             tracks: [...state.tracks, newTrack],
             selectedTrackId: newTrack.id,
           }));
+
+          const engine = getAudioEngine();
+          if (engine.getContext() && !engine.getTrack(newTrack.id)) {
+            engine.createTrack({
+              id: newTrack.id,
+              name: newTrack.name,
+              color: newTrack.color,
+              volume: newTrack.volume,
+              pan: newTrack.pan,
+              muted: newTrack.muted,
+              solo: newTrack.solo,
+              armed: newTrack.armed,
+            });
+          }
+          applyTrackStateToEngine(newTrack);
           
           get().pushHistory('Adicionar Faixa', `Faixa "${newTrack.name}" adicionada`);
           return newTrack.id;
@@ -671,6 +731,7 @@ export const useDuckLabStore = create<DuckLabStore>()(
             tracks: state.tracks.filter(t => t.id !== trackId),
             selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
           }));
+          getAudioEngine().removeTrack(trackId);
           
           if (track) {
             get().pushHistory('Remover Faixa', `Faixa "${track.name}" removida`);
@@ -724,11 +785,16 @@ export const useDuckLabStore = create<DuckLabStore>()(
         },
 
         updateTrack: (trackId, updates) => {
+          const track = get().tracks.find((item) => item.id === trackId);
+          if (!track) return;
+
+          const updatedTrack = { ...track, ...updates };
           set((state) => ({
-            tracks: state.tracks.map(t =>
-              t.id === trackId ? { ...t, ...updates } : t
+            tracks: state.tracks.map((item) =>
+              item.id === trackId ? updatedTrack : item
             ),
           }));
+          applyTrackStateToEngine(updatedTrack);
         },
 
         reorderTracks: (fromIndex, toIndex) => {
@@ -916,69 +982,114 @@ export const useDuckLabStore = create<DuckLabStore>()(
         // TRANSPORT ACTIONS / AÇÕES DE TRANSPORTE
         // ====================================================================
         play: () => {
-          set({ transportState: 'playing' });
+          void prepareAudioEngine(get().tracks)
+            .then((engine) => {
+              const state = get();
+              engine.setBPM(state.project.bpm);
+              engine.setLoopEnabled(state.loopEnabled);
+              engine.setLoopPoints(state.loopStart, state.loopEnd);
+              engine.setCurrentTime(state.currentTime);
+              engine.play();
+              set({ transportState: engine.getTransportState() });
+            })
+            .catch(() => {
+              get().addNotification({
+                type: 'error',
+                title: 'Áudio indisponível',
+                message: 'Não foi possível iniciar o motor de áudio. Verifique as permissões do navegador.',
+              });
+            });
         },
 
         pause: () => {
-          set({ transportState: 'paused' });
+          const engine = getAudioEngine();
+          engine.pause();
+          set({ transportState: engine.getTransportState() });
         },
 
         stop: () => {
+          const engine = getAudioEngine();
+          engine.stop();
           set({
-            transportState: 'stopped',
+            transportState: engine.getTransportState(),
             currentTime: 0,
           });
         },
 
         togglePlayPause: () => {
-          const state = get();
-          if (state.transportState === 'playing') {
-            set({ transportState: 'paused' });
+          if (get().transportState === 'playing') {
+            get().pause();
           } else {
-            set({ transportState: 'playing' });
+            get().play();
           }
         },
 
         startRecording: () => {
-          set({
-            transportState: 'recording',
-            currentTime: 0,
-          });
-          get().addNotification({
-            type: 'info',
-            title: 'Gravação Iniciada',
-            message: 'Gravando nas faixas armadas...',
-          });
+          const armedTracks = get().tracks.filter((track) => track.armed);
+          if (armedTracks.length === 0) {
+            get().addNotification({
+              type: 'warning',
+              title: 'Nenhuma faixa armada',
+              message: 'Arme ao menos uma faixa antes de iniciar a gravação.',
+            });
+            return;
+          }
+
+          void prepareAudioEngine(get().tracks)
+            .then(async (engine) => {
+              engine.setCurrentTime(0);
+              await engine.startRecording();
+              set({ transportState: engine.getTransportState(), currentTime: 0 });
+              get().addNotification({
+                type: 'info',
+                title: 'Gravação iniciada',
+                message: 'Gravando nas faixas armadas.',
+              });
+            })
+            .catch(() => {
+              get().addNotification({
+                type: 'error',
+                title: 'Gravação indisponível',
+                message: 'Permita o acesso ao microfone e tente novamente.',
+              });
+            });
         },
 
         stopRecording: () => {
-          set({
-            transportState: 'stopped',
-          });
+          const engine = getAudioEngine();
+          const recordedBuffers = engine.stopRecording();
+          set({ transportState: engine.getTransportState() });
           get().addNotification({
-            type: 'success',
-            title: 'Gravação Finalizada',
-            message: 'Áudio gravado com sucesso!',
+            type: recordedBuffers.size > 0 ? 'success' : 'warning',
+            title: recordedBuffers.size > 0 ? 'Gravação finalizada' : 'Nenhum áudio capturado',
+            message: recordedBuffers.size > 0
+              ? 'A captura foi encerrada com sucesso.'
+              : 'Nenhuma faixa recebeu áudio durante a gravação.',
           });
         },
 
         setCurrentTime: (time) => {
-          set({ currentTime: Math.max(0, time) });
+          const currentTime = Math.max(0, time);
+          getAudioEngine().setCurrentTime(currentTime);
+          set({ currentTime });
         },
 
         setLoopEnabled: (enabled) => {
+          getAudioEngine().setLoopEnabled(enabled);
           set({ loopEnabled: enabled });
         },
 
         setLoopPoints: (start, end) => {
-          set({
-            loopStart: Math.max(0, start),
-            loopEnd: Math.max(start, end),
-          });
+          const loopStart = Math.max(0, start);
+          const loopEnd = Math.max(loopStart, end);
+          getAudioEngine().setLoopPoints(loopStart, loopEnd);
+          set({ loopStart, loopEnd });
         },
 
         toggleLoop: () => {
-          set((state) => ({ loopEnabled: !state.loopEnabled }));
+          const enabled = !get().loopEnabled;
+          getAudioEngine().setLoopEnabled(enabled);
+          set({ loopEnabled: enabled });
         },
 
         toggleMetronome: () => {
@@ -1413,7 +1524,19 @@ export const useDuckLabStore = create<DuckLabStore>()(
         },
 
         initialize: () => {
-          set({ isInitialized: true });
+          set((state) => {
+            if (state.isInitialized) return {};
+
+            const tracks = state.tracks.length > 0
+              ? state.tracks
+              : [createDefaultTrack(0, { name: 'Faixa 1', color: '#10B981' })];
+
+            return {
+              isInitialized: true,
+              tracks,
+              selectedTrackId: state.selectedTrackId ?? tracks[0]?.id ?? null,
+            };
+          });
         },
 
         reset: () => {
