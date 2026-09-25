@@ -52,3 +52,9 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Environment / secrets
+.env
+.env.local
+.env.*
+!.env.example
